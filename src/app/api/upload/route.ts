@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { MAX_UPLOAD_BYTES } from "@/lib/config";
-import { draftAnswers } from "@/lib/drafting";
+import { scheduleDrafting } from "@/lib/schedule";
 import { ParseError, parseQuestionnaire } from "@/lib/parser";
 import { getOrCreateOrgId } from "@/lib/session";
 import { saveUpload } from "@/lib/storage";
@@ -56,8 +56,7 @@ export async function POST(req: Request) {
     },
   });
 
-  // Stub: synchronous. The real drafting job runs in the background (PRD F5).
-  await draftAnswers(questionnaire.id);
+  scheduleDrafting(questionnaire.id);
 
   return NextResponse.json({
     id: questionnaire.id,

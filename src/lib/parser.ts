@@ -40,8 +40,7 @@ const MIN_QUESTION_LENGTH = 8;
 export async function parseQuestionnaire(data: Buffer, ext: "xlsx" | "csv"): Promise<ParseResult> {
   const workbook = new ExcelJS.Workbook();
   try {
-    if (ext === "csv") await workbook.csv.read(Readable.from(data));
-    else await workbook.xlsx.load(data as unknown as ArrayBuffer);
+    await loadWorkbook(workbook, data, ext);
   } catch {
     throw new ParseError("That file could not be read as a spreadsheet.");
   }
@@ -55,6 +54,16 @@ export async function parseQuestionnaire(data: Buffer, ext: "xlsx" | "csv"): Pro
     throw new ParseError("No questions were found. Check that the file has a column of questions.");
   }
   return best;
+}
+
+/**
+ * Shared by the parser and the exporter so both see identical rows.
+ * CSV values are kept as raw strings: exceljs would otherwise convert
+ * number- and date-looking cells, and the export would rewrite them.
+ */
+export async function loadWorkbook(workbook: ExcelJS.Workbook, data: Buffer, ext: "xlsx" | "csv") {
+  if (ext === "csv") await workbook.csv.read(Readable.from(data), { map: (value: unknown) => value });
+  else await workbook.xlsx.load(data as unknown as ArrayBuffer);
 }
 
 function parseSheet(sheet: ExcelJS.Worksheet): ParseResult | null {

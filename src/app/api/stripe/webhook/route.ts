@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { consumeCredit } from "@/lib/credits";
-import { draftAnswers } from "@/lib/drafting";
+import { scheduleDrafting } from "@/lib/schedule";
 import { getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     case "checkout.session.completed":
     case "checkout.session.async_payment_succeeded": {
       const questionnaireId = await fulfilSinglePurchase(event);
-      if (questionnaireId) await draftAnswers(questionnaireId);
+      if (questionnaireId) scheduleDrafting(questionnaireId);
       break;
     }
     default:

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { APP_URL, PRODUCT_NAME, SINGLE_PRICE_CENTS } from "@/lib/config";
 import { consumeCredit, findUsableCredit } from "@/lib/credits";
-import { draftAnswers } from "@/lib/drafting";
+import { scheduleDrafting } from "@/lib/schedule";
 import { getOrgId } from "@/lib/session";
 import { getStripe } from "@/lib/stripe";
 
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return credit ? consumeCredit(tx, credit.id, questionnaireId) : false;
   });
   if (usedCredit) {
-    await draftAnswers(questionnaireId);
+    scheduleDrafting(questionnaireId);
     return NextResponse.json({ unlocked: true });
   }
 

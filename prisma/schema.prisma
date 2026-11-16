@@ -147,6 +147,8 @@ model Questionnaire {
   unlocked      Boolean  @default(false)
   creditId      String?
   questionCount Int      @default(0)
+  // Set while a drafting run holds this questionnaire; doubles as a heartbeat.
+  draftingStartedAt DateTime?
   createdAt     DateTime @default(now())
 
   org       Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
