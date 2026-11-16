@@ -1,0 +1,198 @@
+// Local-dev schema: Prisma + SQLite.
+//
+// This mirrors the Postgres schema in mvp_prd.md section 4 with three
+// SQLite-driven differences:
+//   * enums are plain strings (allowed values are listed in comments and
+//     enforced in src/lib/config.ts),
+//   * JSON columns are stored as String,
+//   * the pgvector `embedding` column and tsvector index are omitted.
+// Moving to Postgres means changing the datasource and restoring those.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Identity ────────────────────────────────────────────────────────────
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String?
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+}
+
+model Organization {
+  id               String   @id @default(cuid())
+  name             String
+  stripeCustomerId String?  @unique
+  plan             String   @default("free") // free | starter | growth
+  createdAt        DateTime @default(now())
+
+  memberships    Membership[]
+  credits        QuestionnaireCredit[]
+  questionnaires Questionnaire[]
+  vendors        OrgVendor[]
+  interview      InterviewAnswer[]
+  answerBank     AnswerBankEntry[]
+}
+
+model Membership {
+  orgId  String
+  userId String
+  role   String @default("owner") // owner | member
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, userId])
+}
+
+// ── Billing ─────────────────────────────────────────────────────────────
+
+// One row per entitlement grant. The $79 Single creates a row with
+// quantity 1; subscription periods will later create rows with expiresAt.
+model QuestionnaireCredit {
+  id        String    @id @default(cuid())
+  orgId     String
+  source    String // single_purchase | subscription_period
+  stripeRef String? // checkout session id or invoice id
+  quantity  Int
+  used      Int       @default(0)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  org            Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  questionnaires Questionnaire[]
+
+  @@unique([source, stripeRef])
+  @@index([orgId])
+}
+
+// Webhook idempotency: the Stripe event id is the primary key.
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+}
+
+// ── Knowledge (schema only in this scaffold; no UI yet) ─────────────────
+
+model VendorControl {
+  id         String   @id @default(cuid())
+  vendorSlug String
+  category   String
+  topic      String
+  statement  String
+  sourceUrl  String
+  verifiedAt DateTime
+
+  @@index([vendorSlug])
+}
+
+model OrgVendor {
+  orgId      String
+  vendorSlug String
+  purpose    String?
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, vendorSlug])
+}
+
+model InterviewAnswer {
+  orgId       String
+  questionKey String
+  value       String // yes | no | partial | na
+  detail      String?
+  updatedAt   DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, questionKey])
+}
+
+model AnswerBankEntry {
+  id           String   @id @default(cuid())
+  orgId        String
+  topic        String?
+  questionText String
+  answerText   String
+  answerType   String // yes | no | partial | na | text
+  source       String // vendor | interview | approved_answer | manual
+  sourceRef    String?
+  updatedAt    DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// ── Questionnaires ──────────────────────────────────────────────────────
+
+model Questionnaire {
+  id            String   @id @default(cuid())
+  orgId         String
+  title         String
+  requesterName String?
+  originalKey   String // storage key of the uploaded file
+  exportKey     String?
+  columnMapping String? // JSON: {sheet, headerRow, questionCol, answerCol}
+  status        String   @default("uploaded") // uploaded | mapped | drafting | review | exported | failed
+  unlocked      Boolean  @default(false)
+  creditId      String?
+  questionCount Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  org       Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  credit    QuestionnaireCredit? @relation(fields: [creditId], references: [id])
+  questions Question[]
+
+  @@index([orgId, createdAt])
+}
+
+model Question {
+  id              String  @id @default(cuid())
+  questionnaireId String
+  position        Int
+  sheetName       String
+  rowNumber       Int
+  section         String?
+  text            String
+
+  questionnaire Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  answer        Answer?
+
+  @@unique([questionnaireId, position])
+}
+
+model Answer {
+  questionId   String    @id
+  answerType   String? // yes | no | partial | na | text | needs_input
+  draftText    String?
+  finalText    String?
+  confidence   String? // high | medium | low
+  citations    String    @default("[]") // JSON: [{entryId, quote}]
+  status       String    @default("pending") // pending | drafted | approved | failed
+  approvedAt   DateTime?
+  model        String?
+  inputTokens  Int?
+  outputTokens Int?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model UsageEvent {
+  id        Int      @id @default(autoincrement())
+  orgId     String
+  kind      String
+  meta      String   @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+}
